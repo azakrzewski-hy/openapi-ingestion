@@ -1,0 +1,800 @@
+openapi: 3.0.3
+info:
+  title: HxAI Insight Ingestion REST API
+  version: 1.5.0
+  description: REST API used to synchronize content (files + metadata) with data lake
+servers:
+  - url: https://ingestion.insight.dev.experience.hyland.com
+    description: dev environment
+components:
+  parameters:
+    contentTypeHeader:
+      name: content-type
+      description: content-type header
+      in: header
+      required: true
+      example: application/json
+      schema:
+        type: string
+    authHeader:
+      name: authorization
+      description: Hyland Experience IAM IdP Bearer token
+      in: header
+      required: true
+      example: Bearer <jwt_token>
+      schema:
+        type: string
+    environmentHeader:
+      name: hxp-environment
+      description: Key of the Hyland Experience Environment
+      in: header
+      required: true
+      example: hxai-84fe439b-e9a0-44d0-84da-07235736707e
+      schema:
+        type: string
+    userAgentHeader:
+      name: user-agent
+      description: >-
+        Metadata regarding the type of connector in format:
+        connector_name/version integrating_system/version (OS information)
+        http_library/version
+      in: header
+      required: true
+      example: ACS HXI Connector/1.0.42 ACS/24.1.0 (Linux x86_64) Camel/1.0.0
+      schema:
+        type: string
+    count:
+      name: count
+      description: Requested number of pre-signed URLs
+      in: query
+      required: false
+      example: 5
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        maximum: 100
+    sourceId:
+      name: sourceId
+      description: The content source id.
+      in: path
+      required: true
+      example: 995edbf2-c389-42ef-9d88-m33euszed222
+      schema:
+        type: string
+        minLength: 1
+    objectId:
+      name: objectId
+      description: The content id in the source repository.
+      in: path
+      required: true
+      example: d6c30c7e-a3a3-4fd0-afb6-16cc26f5de02
+      schema:
+        type: string
+        minLength: 1
+    digest:
+      name: digest
+      description: The file digest in the source repository.
+      in: path
+      required: true
+      example: dd594f89e8f8adf17ef1fb7ceb79e784691a2e09968189f11c0afdf91d4e1f76
+      schema:
+        type: string
+        minLength: 1
+  schemas:
+    PresignedUrlsResponse:
+      type: array
+      items:
+        type: object
+        properties:
+          url:
+            type: string
+            example: https://s3.amazonaws.com/bucket-name/bucket-folder/file-name?...
+            description: The pre-signed URL to upload a file to the data lake
+          id:
+            type: string
+            example: e381e783-1e30-4793-b250-3eda634b7c2c
+            description: The name of the file in the data lake (random UUID)
+    ContentEvents:
+      title: Content events notifications
+      description: >-
+        A collection of content events that happened in the source repository
+        and have to be synchronized with the data lake
+      type: array
+      minItems: 1
+      maxItems: 100
+      items:
+        anyOf:
+          - $ref: '#/components/schemas/CreateContentEvent'
+          - $ref: '#/components/schemas/UpdateContentEvent'
+          - $ref: '#/components/schemas/DeleteContentEvent'
+          - $ref: '#/components/schemas/CreateOrUpdateContentEvent'
+    ContentEventBase:
+      title: Content event base
+      description: Base properties describing a content event.
+      type: object
+      required:
+        - objectId
+        - sourceId
+      properties:
+        objectId:
+          description: Unique ID of the content in the source repository.
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._\-~]+$
+        sourceId:
+          description: Unique ID of the source repository.
+          type: string
+          minLength: 1
+        sourceTimestamp:
+          description: >-
+            Unix Epoch timestamp in milliseconds of when the event happened in
+            the source system.
+          type: integer
+    CreateContentEvent:
+      title: Create content event
+      description: >-
+        **Deprecated: create event will be removed after createOrUpdate event is
+        fully implemented.** A content event describing a content was created in
+        the source repository.
+      deprecated: true
+      allOf:
+        - $ref: '#/components/schemas/ContentEventBase'
+        - type: object
+          required:
+            - eventType
+            - properties
+          properties:
+            eventType:
+              description: The type of the content event.
+              type: string
+              enum:
+                - create
+            properties:
+              description: All metadata properties of this content, including files
+              type: object
+              additionalProperties:
+                oneOf:
+                  - $ref: '#/components/schemas/File'
+                  - $ref: '#/components/schemas/Value'
+    UpdateContentEvent:
+      title: Update content event
+      description: >-
+        **Deprecated: update event will be removed after createOrUpdate event is
+        fully implemented.** A content event describing a content was updated in
+        the source repository.
+      deprecated: true
+      allOf:
+        - $ref: '#/components/schemas/ContentEventBase'
+        - type: object
+          required:
+            - eventType
+          properties:
+            eventType:
+              description: The type of the content event.
+              type: string
+              enum:
+                - update
+        - anyOf:
+            - type: object
+              required:
+                - properties
+              properties:
+                properties:
+                  description: All metadata properties of this content, including files
+                  type: object
+                  additionalProperties:
+                    oneOf:
+                      - $ref: '#/components/schemas/File'
+                      - $ref: '#/components/schemas/Value'
+    DeleteContentEvent:
+      title: Delete content event
+      description: >-
+        A content event describing a content was deleted in the source
+        repository.
+      allOf:
+        - $ref: '#/components/schemas/ContentEventBase'
+        - type: object
+          required:
+            - eventType
+          properties:
+            eventType:
+              description: The type of the content event.
+              type: string
+              enum:
+                - delete
+    CreateOrUpdateContentEvent:
+      title: Create or Update content event
+      description: >-
+        A content event describing a content changed somehow (it could have been
+        created or updated) in the source repository.
+      allOf:
+        - $ref: '#/components/schemas/ContentEventBase'
+        - type: object
+          required:
+            - eventType
+          properties:
+            eventType:
+              description: The type of the content event.
+              type: string
+              enum:
+                - createOrUpdate
+        - anyOf:
+            - type: object
+              required:
+                - properties
+              properties:
+                properties:
+                  description: >-
+                    Uploaded files references (temporary storage IDs and
+                    content-types)
+                  type: object
+                  additionalProperties:
+                    $ref: '#/components/schemas/FileUpload'
+            - type: object
+              required:
+                - properties
+              properties:
+                properties:
+                  description: >-
+                    Updated metadata (requires all metadata - document and files
+                    metadata)
+                  type: object
+                  additionalProperties:
+                    oneOf:
+                      - $ref: '#/components/schemas/FileMetadata'
+                      - $ref: '#/components/schemas/Value'
+            - type: object
+              required:
+                - properties
+              properties:
+                properties:
+                  description: Full content update (metadata update and files uploaded)
+                  type: object
+                  additionalProperties:
+                    oneOf:
+                      - $ref: '#/components/schemas/FileMetadataWithOptionalUpload'
+                      - $ref: '#/components/schemas/Value'
+    File:
+      oneOf:
+        - $ref: '#/components/schemas/FileMetadata'
+        - $ref: '#/components/schemas/FileUpload'
+        - $ref: '#/components/schemas/FileMetadataWithUpload'
+    FileUpload:
+      type: object
+      required:
+        - file
+      additionalProperties: false
+      properties:
+        file:
+          type: object
+          required:
+            - id
+            - content-type
+          additionalProperties: false
+          properties:
+            id:
+              type: string
+              minLength: 1
+            content-type:
+              type: string
+              pattern: ^[a-zA-Z-]+/[a-zA-Z0-9.+_-]+$
+    FileMetadata:
+      type: object
+      required:
+        - file
+      additionalProperties: false
+      properties:
+        file:
+          required:
+            - content-metadata
+          additionalProperties: false
+          properties:
+            content-metadata:
+              type: object
+              required:
+                - size
+                - name
+                - content-type
+              properties:
+                size:
+                  type: integer
+                  minimum: 0
+                name:
+                  type: string
+                  minLength: 1
+                content-type:
+                  type: string
+                  pattern: ^[a-zA-Z-]+/[a-zA-Z0-9.+_-]+$
+                digest:
+                  type: string
+                  minLength: 1
+    FileMetadataWithUpload:
+      type: object
+      required:
+        - file
+      additionalProperties: false
+      properties:
+        file:
+          required:
+            - content-metadata
+            - id
+            - content-type
+          additionalProperties: false
+          properties:
+            content-metadata:
+              type: object
+              required:
+                - size
+                - name
+                - content-type
+              properties:
+                size:
+                  type: integer
+                  minimum: 0
+                name:
+                  type: string
+                  minLength: 1
+                content-type:
+                  type: string
+                  pattern: ^[a-zA-Z-]+/[a-zA-Z0-9.+_-]+$
+                digest:
+                  type: string
+                  minLength: 1
+            id:
+              type: string
+              minLength: 1
+            content-type:
+              type: string
+              pattern: ^[a-zA-Z-]+/[a-zA-Z0-9.+_-]+$
+    FileMetadataWithOptionalUpload:
+      type: object
+      required:
+        - file
+      additionalProperties: false
+      properties:
+        file:
+          required:
+            - content-metadata
+          additionalProperties: false
+          properties:
+            content-metadata:
+              type: object
+              required:
+                - size
+                - name
+                - content-type
+              properties:
+                size:
+                  type: integer
+                  minimum: 0
+                name:
+                  type: string
+                  minLength: 1
+                content-type:
+                  type: string
+                  pattern: ^[a-zA-Z-]+/[a-zA-Z0-9.+_-]+$
+                digest:
+                  type: string
+                  minLength: 1
+            id:
+              type: string
+              minLength: 1
+            content-type:
+              type: string
+              pattern: ^[a-zA-Z-]+/[a-zA-Z0-9.+_-]+$
+    Value:
+      oneOf:
+        - $ref: '#/components/schemas/ValueFloat'
+        - $ref: '#/components/schemas/ValueInteger'
+        - $ref: '#/components/schemas/ValueMultiValue'
+        - $ref: '#/components/schemas/ValueString'
+        - $ref: '#/components/schemas/ValueBoolean'
+    DataTypeFloat:
+      type: number
+      format: double
+      minimum: -1.7976931348623157e+308
+      maximum: 1.7976931348623157e+308
+    ValueFloat:
+      type: object
+      required:
+        - type
+        - value
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+            - float
+        value:
+          oneOf:
+            - $ref: '#/components/schemas/DataTypeFloat'
+            - type: array
+              items:
+                $ref: '#/components/schemas/DataTypeFloat'
+              minItems: 1
+    DataTypeInteger:
+      type: integer
+      format: int64
+      minimum: -9007199254740991
+      maximum: 9007199254740991
+    ValueInteger:
+      type: object
+      required:
+        - type
+        - value
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+            - integer
+        value:
+          oneOf:
+            - $ref: '#/components/schemas/DataTypeInteger'
+            - type: array
+              items:
+                $ref: '#/components/schemas/DataTypeInteger'
+              minItems: 1
+    ValueMultiValue:
+      type: object
+      required:
+        - value
+      additionalProperties: false
+      properties:
+        value:
+          oneOf:
+            - type: string
+              minLength: 0
+              nullable: true
+            - type: number
+            - type: boolean
+            - type: object
+              minProperties: 0
+            - type: array
+              minItems: 0
+              items:
+                anyOf:
+                  - type: string
+                    minLength: 0
+                    nullable: true
+                  - type: number
+                  - type: boolean
+                  - type: object
+                    minProperties: 0
+        type:
+          type: string
+          enum:
+            - text
+            - category
+          deprecated: true
+          description: >-
+            **Deprecated: legacy Insight type text or category. This is NOT
+            Ingestion data type.**
+        annotation:
+          type: string
+          deprecated: true
+          description: '**Experimental: do not use.**'
+    ValueString:
+      type: object
+      required:
+        - type
+        - value
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+            - string
+        value:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+              minItems: 1
+    ValueBoolean:
+      type: object
+      required:
+        - type
+        - value
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+            - boolean
+        value:
+          oneOf:
+            - type: boolean
+            - type: array
+              minItems: 1
+              items:
+                type: boolean
+tags:
+  - name: files
+  - name: metadata
+paths:
+  /v1/presigned-urls:
+    parameters:
+      - $ref: '#/components/parameters/authHeader'
+      - $ref: '#/components/parameters/environmentHeader'
+      - $ref: '#/components/parameters/userAgentHeader'
+      - $ref: '#/components/parameters/count'
+    post:
+      tags:
+        - files
+      summary: Request pre-signed URLs to upload files
+      description: Returns pre-signed URLs to upload files to the data lake
+      operationId: presignedUrls
+      x-amazon-apigateway-integration:
+        type: HTTP
+        httpMethod: POST
+        uri: https://ingestion-api.insight.dev.ncp.hyland.com/v1/presigned-urls
+        requestParameters:
+          integration.request.header.authorization: method.request.header.authorization
+          integration.request.header.hxp-environment: method.request.header.hxp-environment
+          integration.request.header.user-agent: method.request.header.user-agent
+          integration.request.querystring.count: method.request.querystring.count
+        responses:
+          '200':
+            statusCode: 200
+          '400':
+            statusCode: 400
+          '401':
+            statusCode: 401
+          '403':
+            statusCode: 403
+          '422':
+            statusCode: 422
+          '500':
+            statusCode: 500
+        passthroughBehavior: when_no_match
+        timeoutInMillis: 29000
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignedUrlsResponse'
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '422':
+          description: Unprocessable Content
+        '500':
+          description: Internal Server Error
+  /v1/ingestion-events:
+    parameters:
+      - $ref: '#/components/parameters/authHeader'
+      - $ref: '#/components/parameters/contentTypeHeader'
+      - $ref: '#/components/parameters/environmentHeader'
+      - $ref: '#/components/parameters/userAgentHeader'
+    post:
+      tags:
+        - metadata
+      summary: >-
+        Notify data lake about content events that happened in the source
+        repository
+      description: >-
+        Notifies data lake of one or more content events within the source
+        repository
+      operationId: ingestionEvents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContentEvents'
+            examples:
+              example-create:
+                summary: Create content event
+                value:
+                  - objectId: 00e619f4-d935-43fa-9ac0-0a63de491876
+                    eventType: create
+                    sourceId: 12e60790-fc25-32c4-88f2-176c25e13b3a
+                    sourceTimestamp: 1732022495428
+                    properties:
+                      myFileProperty:
+                        file:
+                          id: ecc22bdc-ac8e-4736-a36a-8b9ecc0c66d4
+                          content-type: image/jpeg
+                          content-metadata:
+                            size: 23100
+                            name: image.bmp
+                            content-type: image/bmp
+                      propertyName1:
+                        value: 1732022495428
+                      anotherPropertyName:
+                        value: The title
+                      property:name:
+                        value: true
+                      propertyName2:
+                        value:
+                          first: property
+                          second: property
+                      propertyName3:
+                        value:
+                          - 1732022495428
+                          - The title
+                          - true
+                          - first: property
+                            second: property
+              example-update:
+                summary: Update content event
+                value:
+                  - objectId: 90e619f4-d935-43fa-9ac0-0a63de491878
+                    eventType: update
+                    sourceId: 12e60790-fc25-32c4-88f2-176c25e13b3a
+                    sourceTimestamp: 1732022495428
+                    properties:
+                      propertyName1:
+                        value:
+                          - bird
+                          - cat
+                      anotherPropertyName:
+                        value: value123
+                      property:name:
+                        value: '2023-10-05T17:31:00Z'
+                      propertyName2:
+                        value:
+                          count: 42
+                      propertyName3:
+                        value:
+                          - name: 'The Legend of Zelda: Breath of the Wild'
+                            releaseYear: '2017'
+                          - name: 'The Legend of Zelda: Tears of the Kingdom'
+                            releaseYear: '2023'
+                      propertyName4:
+                        value: 1712045011
+                      propertyName5:
+                        value: true
+                      propertyName6:
+                        file:
+                          id: ecc22bdc-ac8e-4736-a36a-8b9ecc0c66d4
+                          content-type: image/jpeg
+                          content-metadata:
+                            size: 23100
+                            name: image.bmp
+                            content-type: image/bmp
+              example-delete:
+                summary: Delete content event
+                value:
+                  - objectId: 90e619f4-d935-43fa-9ac0-0a63de491878
+                    eventType: delete
+                    sourceId: 12e60790-fc25-32c4-88f2-176c25e13b3a
+                    sourceTimestamp: 1732022495428
+              example-create-or-update:
+                summary: Create or Update content event
+                value:
+                  - objectId: 90e619f4-d935-43fa-9ac0-0a63de491878
+                    eventType: createOrUpdate
+                    sourceId: 12e60790-fc25-32c4-88f2-176c25e13b3a
+                    sourceTimestamp: 1732022495428
+                    properties:
+                      propertyName1:
+                        value:
+                          - bird
+                          - cat
+                      anotherPropertyName:
+                        value: value123
+                      property:name:
+                        value: '2023-10-05T17:31:00Z'
+                      propertyName2:
+                        value:
+                          count: 42
+                      propertyName3:
+                        value:
+                          - name: 'The Legend of Zelda: Breath of the Wild'
+                            releaseYear: '2017'
+                          - name: 'The Legend of Zelda: Tears of the Kingdom'
+                            releaseYear: '2023'
+                      propertyName4:
+                        value: 1712045011
+                      propertyName5:
+                        value: true
+                      propertyName6:
+                        file:
+                          id: ecc22bdc-ac8e-4736-a36a-8b9ecc0c66d4
+                          content-type: image/jpeg
+                          content-metadata:
+                            size: 23100
+                            name: image.bmp
+                            content-type: image/bmp
+      x-amazon-apigateway-integration:
+        type: HTTP
+        httpMethod: POST
+        uri: https://ingestion-api.insight.dev.ncp.hyland.com/v1/ingestion-events
+        requestParameters:
+          integration.request.header.authorization: method.request.header.authorization
+          integration.request.header.content-type: method.request.header.content-type
+          integration.request.header.hxp-environment: method.request.header.hxp-environment
+          integration.request.header.user-agent: method.request.header.user-agent
+        requestTemplates:
+          application/json: $input.body
+        responses:
+          '202':
+            statusCode: 202
+          '400':
+            statusCode: 400
+          '401':
+            statusCode: 401
+          '403':
+            statusCode: 403
+          '422':
+            statusCode: 422
+          '500':
+            statusCode: 500
+        passthroughBehavior: when_no_match
+        timeoutInMillis: 29000
+      responses:
+        '202':
+          description: Accepted
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '422':
+          description: Unprocessable Content
+        '500':
+          description: Internal Server Error
+  /v1/check-digest/{sourceId}/{objectId}/{digest}:
+    parameters:
+      - $ref: '#/components/parameters/authHeader'
+      - $ref: '#/components/parameters/environmentHeader'
+      - $ref: '#/components/parameters/userAgentHeader'
+      - $ref: '#/components/parameters/sourceId'
+      - $ref: '#/components/parameters/objectId'
+      - $ref: '#/components/parameters/digest'
+    get:
+      tags:
+        - metadata
+        - files
+      summary: Check if digest is present in specified object in the data lake
+      description: >-
+        Checks if digest is present in specified object found by sourceId and
+        objectId in the data lake
+      operationId: checkDigest
+      x-amazon-apigateway-integration:
+        type: HTTP
+        httpMethod: GET
+        uri: >-
+          https://ingestion-api.insight.dev.ncp.hyland.com/v1/check-digest/{sourceId}/{objectId}/{digest}
+        requestParameters:
+          integration.request.header.authorization: method.request.header.authorization
+          integration.request.header.hxp-environment: method.request.header.hxp-environment
+          integration.request.header.user-agent: method.request.header.user-agent
+          integration.request.path.sourceId: method.request.path.sourceId
+          integration.request.path.objectId: method.request.path.objectId
+          integration.request.path.digest: method.request.path.digest
+        responses:
+          '204':
+            statusCode: 204
+          '401':
+            statusCode: 401
+          '403':
+            statusCode: 403
+          '404':
+            statusCode: 404
+          '500':
+            statusCode: 500
+        passthroughBehavior: when_no_match
+        timeoutInMillis: 29000
+      responses:
+        '204':
+          description: No Content
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not Found
+        '500':
+          description: Internal Server Error
