@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: HxAI Insight Ingestion REST API
-  version: 1.5.0
+  version: 1.7.0
   description: REST API used to synchronize content (files + metadata) with data lake
 servers:
   - url: https://ingestion.insight.dev.experience.hyland.com
@@ -391,6 +391,9 @@ components:
         - $ref: '#/components/schemas/ValueMultiValue'
         - $ref: '#/components/schemas/ValueString'
         - $ref: '#/components/schemas/ValueBoolean'
+        - $ref: '#/components/schemas/ValueObject'
+        - $ref: '#/components/schemas/ValueDate'
+        - $ref: '#/components/schemas/ValueDatetime'
     DataTypeFloat:
       type: number
       format: double
@@ -411,9 +414,9 @@ components:
           oneOf:
             - $ref: '#/components/schemas/DataTypeFloat'
             - type: array
+              minItems: 1
               items:
                 $ref: '#/components/schemas/DataTypeFloat'
-              minItems: 1
     DataTypeInteger:
       type: integer
       format: int64
@@ -434,9 +437,9 @@ components:
           oneOf:
             - $ref: '#/components/schemas/DataTypeInteger'
             - type: array
+              minItems: 1
               items:
                 $ref: '#/components/schemas/DataTypeInteger'
-              minItems: 1
     ValueMultiValue:
       type: object
       required:
@@ -491,9 +494,9 @@ components:
           oneOf:
             - type: string
             - type: array
+              minItems: 1
               items:
                 type: string
-              minItems: 1
     ValueBoolean:
       type: object
       required:
@@ -512,6 +515,68 @@ components:
               minItems: 1
               items:
                 type: boolean
+    ValueObject:
+      type: object
+      required:
+        - type
+        - value
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+            - object
+        value:
+          oneOf:
+            - type: object
+              additionalProperties:
+                $ref: '#/components/schemas/Value'
+            - type: array
+              items:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/Value'
+              minItems: 1
+    ValueDate:
+      type: object
+      required:
+        - type
+        - value
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+            - date
+        value:
+          oneOf:
+            - type: string
+              pattern: ^\d{4}-\d{2}-\d{2}$
+            - type: array
+              minItems: 1
+              items:
+                type: string
+                pattern: ^\d{4}-\d{2}-\d{2}$
+    ValueDatetime:
+      type: object
+      required:
+        - type
+        - value
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+            - datetime
+        value:
+          oneOf:
+            - type: string
+              pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$
+            - type: array
+              minItems: 1
+              items:
+                type: string
+                pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$
 tags:
   - name: files
   - name: metadata
@@ -706,6 +771,79 @@ paths:
                             size: 23100
                             name: image.bmp
                             content-type: image/bmp
+                      propertyName7:
+                        type: object
+                        value:
+                          property1:
+                            type: string
+                            value: value123
+                          property2:
+                            type: boolean
+                            value: true
+                          property3:
+                            type: integer
+                            value: 123
+                          property4:
+                            type: float
+                            value: 1.23456789
+                      propertyName8:
+                        type: object
+                        value:
+                          - property1:
+                              type: string
+                              value: value123
+                            property2:
+                              type: boolean
+                              value: true
+                          - property3:
+                              type: integer
+                              value: 123
+                            property4:
+                              type: float
+                              value: 1.23456789
+                      propertyName9:
+                        type: date
+                        value: '2025-04-01'
+                      propertyName10:
+                        type: datetime
+                        value: '2025-02-07T14:23:13.742Z'
+                      propertyName11:
+                        type: float
+                        value: 3.14159
+                      propertyName12:
+                        type: integer
+                        value: 42
+                      propertyName13:
+                        type: boolean
+                        value: false
+                      propertyName14:
+                        type: date
+                        value:
+                          - '2025-04-01'
+                          - '2026-05-02'
+                      propertyName15:
+                        type: datetime
+                        value:
+                          - '2025-02-07T14:23:13.742Z'
+                          - '2024-09-17T10:53:06Z'
+                      propertyName16:
+                        type: float
+                        value:
+                          - 3.14159
+                          - -9.81
+                          - 6.02e+23
+                      propertyName17:
+                        type: integer
+                        value:
+                          - 42
+                          - 9999
+                          - -123
+                      propertyName18:
+                        type: boolean
+                        value:
+                          - true
+                          - false
+                          - true
       x-amazon-apigateway-integration:
         type: HTTP
         httpMethod: POST
